@@ -1,0 +1,83 @@
+1、错误1：
+
+Exception in thread "main"java.lang.RuntimeException: java.lang.IllegalArgumentException:java.net.URISyntaxException: Relative path in absolute URI:${system:java.io.tmpdir%7D/$%7Bsystem:user.name%7D
+
+解决方案：新建一个iotmp目录,比如/home/hadoop/hive/iotmp，打开hive-site.xml文件，把所有的${system:java.io.tmpdir}都替换成新建的那个目录，另外一定要把${system:user.name}也替换成实际的用户名，否则还是会报错。
+
+tips：可以使用 %s#${system:java.io.tmpdir}#/home/hadoop/hive/iotmp#g这个指令进行全局替换。
+
+
+
+2、错误2：
+
+FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. java.lang.RuntimeException: Unable to instantiate org.apache.hadoop.hive.metastore.HiveMetaStoreClient
+
+
+
+解决方案：hive.metastore.schema.verification这个参数的属性设置为false，在hive-site.xml文件中修改。
+
+
+
+3、错误3：
+
+Exception in thread "main" java.sql.SQLException: Could not open client transport with JDBC Uri: jdbc:hive2://10.21.17.205:10000/default: java.net.ConnectException: Connection refused: connect
+at org.apache.hive.jdbc.HiveConnection.<init>(HiveConnection.java:209)
+at org.apache.hive.jdbc.HiveDriver.connect(HiveDriver.java:107)
+at java.sql.DriverManager.getConnection(DriverManager.java:664)
+at java.sql.DriverManager.getConnection(DriverManager.java:247)
+at com.ailk.aus.flumeplugin.jdbc.util.Test.main(Test.java:14)
+Caused by: org.apache.thrift.transport.TTransportException: java.net.ConnectException: Connection refused: connect
+at org.apache.thrift.transport.TSocket.open(TSocket.java:226)
+at org.apache.thrift.transport.TSaslTransport.open(TSaslTransport.java:266)
+at org.apache.thrift.transport.TSaslClientTransport.open(TSaslClientTransport.java:37)
+at org.apache.hive.jdbc.HiveConnection.openTransport(HiveConnection.java:227)
+at org.apache.hive.jdbc.HiveConnection.<init>(HiveConnection.java:182)
+... 4 more
+
+解决方案：查看hiveserver服务是不是正在运行，查看10000端口是不是正则监听，如果没有启动这个服务，使用指令：hive --service hiveserver2启动
+
+
+
+4、外部程序想要通过jdbc来连接hive，只需要把hive安装目录下的jdbc目录下的hive-jdbc-2.3.0-standalone.jar这个包依赖进去即可，这样就不会出现驱动或者api版本冲突的问题。
+
+
+
+5、如果使用的hadoop版本是2.8.0以上的，则hive无法使用聚合函数，即设计到MR计算的相关功能，hive2.3之后建议使用spark sql来替代hql。
+
+
+
+6、外部程序连接如果出现这个错误：
+
+java.sql.SQLException: Could not open client transport with JDBC Uri: jdbc:hive2://10.21.17.205:10000/default: Failed to open new session: java.lang.RuntimeException: org.apache.hadoop.ipc.RemoteException(org.apache.hadoop.security.authorize.AuthorizationException): User: hadoop is not allowed to impersonate anonymous
+at org.apache.hive.jdbc.HiveConnection.<init>(HiveConnection.java:224)
+at org.apache.hive.jdbc.HiveDriver.connect(HiveDriver.java:107)
+at java.sql.DriverManager.getConnection(DriverManager.java:664)
+at java.sql.DriverManager.getConnection(DriverManager.java:247)
+at com.ailk.aus.flumeplugin.jdbc.util.Test.main(Test.java:14)
+Caused by: org.apache.hive.service.cli.HiveSQLException: Failed to open new session:
+
+解决方案：这个错原因是使用的匿名用户没有权限，需要配置hadoop的core-site.xml文件，配置：
+<property>
+<name>hadoop.proxyuser.hadoop.hosts</name>
+<value>*</value>
+</property>
+<property>
+<name>hadoop.proxyuser.hadoop.groups</name>
+<value>*</value>
+</property>
+然后重新启动hdfs即可。
+
+7、如果执行统计查询，遇到这样的信息，且一直没有结果返回：
+Number of reduce tasks not specified. Estimated from input data size: 1
+In order to change the average load for a reducer (in bytes):
+set hive.exec.reducers.bytes.per.reducer=<number>
+In order to limit the maximum number of reducers:
+set hive.exec.reducers.max=<number>
+In order to set a constant number of reducers:
+set mapreduce.job.reduces=<number>
+Starting Job = job_1503461277652_0001, Tracking URL = http://bigdata01:8088/proxy/application_1503461277652_0001/
+Kill Command = /home/hadoop/hadoop-2.6.0/bin/hadoop job  -kill job_1503461277652_0001
+
+解决方案：这种错一般都因为，yarn接受了job之后，并没有提交给node执行，这个时候需要检查yarn集群服务是不是正常运行。可以通过指令：
+yarn node -list查看每个nodemanager的健康状况。
+ps：如果nodemanager所在的节点剩余磁盘空间大小不超过10%，则yarn是无法提交job到此node上运行的。
